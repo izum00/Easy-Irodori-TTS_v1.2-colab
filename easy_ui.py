@@ -9,6 +9,7 @@ import traceback
 import gradio as gr
 import easy_dictionary
 import easy_options as opt
+import easy_memory as mem
 from easy_audio import change_speed, VOLUME_HTML, VOLUME_JS
 from easy_text_tools import build_dictionary_tab, build_emoji_picker, preview
 
@@ -90,6 +91,8 @@ def generation_handler(upstream, keys):
             params["caption"] = ""
         yield empty("生成しています。初回はモデルを取得するため時間がかかります。画面を閉じずにお待ちください。")
         progress(0, desc="モデルの準備・音声生成中")
+        mem.release()  # 前回の生成で残ったRAM・GPUキャッシュを先に解放
+        ram_before = mem.process_gb()
         try:
             original_text=params['text']
             saved_settings=opt.read()
@@ -114,11 +117,20 @@ def generation_handler(upstream, keys):
             result = list(result)
             result.append("話速: " + str(speed) + "倍\n保存先:\n" + "\n".join(speed_paths))
             downloads = [gr.update(value=item.get("value"), visible=bool(item.get("value"))) for item in audios]
+            if saved_settings.get('unload_after'):
+                upstream._clear_runtime_cache();upstream._easy_last_key=None
+            mem.release()  # 生成が終わったらRAM・GPUキャッシュを解放
+            memory_note = mem.summary(ram_before)
+            result.append(memory_note)
             progress(1, desc="生成完了")
-            yield audios + downloads + ["生成が完了しました。音声は「WAVをダウンロード」で保存もできます。\n"+export_note, "\n\n".join(result[count:])]
+            yield audios + downloads + ["生成が完了しました。音声は「WAVをダウンロード」で保存もできます。\n"+export_note+"\n"+memory_note, "\n\n".join(result[count:])]
         except Exception as exc:
             traceback.print_exc()
-            yield empty(error_message(exc), traceback.format_exc())
+            detail = traceback.format_exc()
+            message = error_message(exc)
+            exc = None
+            mem.release()  # エラー後もRAM・GPUキャッシュを解放
+            yield empty(message, detail)
     return generate
 
 
@@ -279,9 +291,12 @@ def build_ui(upstream):
             return path,gr.update(value=path,visible=True)
         selected_audio.input(choose_audio,[selected_audio,paths],[audio,download],queue=False)
         def release():
+            before = mem.process_gb()
             upstream._clear_runtime_cache()
+            upstream._easy_last_key = None
+            mem.release()
             gr.Info("モデルをメモリから解放しました。")
-            return "モデルをメモリから解放しました。次回生成時に再読み込みします。"
+            return "モデルをメモリから解放しました。次回生成時に再読み込みします。\n" + mem.summary(before)
         unload.click(release,outputs=status,concurrency_id="synthesis")
         rf_names=['cfg_scale_text','cfg_scale_caption','cfg_scale_speaker','cfg_guidance_mode','t_schedule_mode','sway_coeff','cfg_scale_raw','speaker_kv_scale_raw','cfg_min_t','cfg_max_t','truncation_factor_raw','rescale_k_raw','rescale_sigma_raw']
         restored_model=opt.restore().get('values',{})

@@ -7,7 +7,7 @@ import gradio as gr
 ROOT=Path(__file__).resolve().parent
 LOCK=threading.Lock()
 MF='Aratako/Irodori-TTS-v4.1-Small-MF'
-DEFAULTS=dict(theme='system',restore_input=False,auto_export=True,custom_output=False,output_dir='',custom_pattern=False,pattern='$連番$_$日付$',txt=False)
+DEFAULTS=dict(theme='system',restore_input=False,unload_after=False,auto_export=True,custom_output=False,output_dir='',custom_pattern=False,pattern='$連番$_$日付$',txt=False)
 def read():
     path=ROOT/'config/settings.json'
     result=dict(DEFAULTS)
@@ -125,6 +125,10 @@ def build_options():
             gr.Markdown('### 入力の復元')
             controls['restore_input']=gr.Checkbox(settings['restore_input'],label='前回の入力を復元する')
             gr.Markdown('お手本の音声は再選択してください。辞書とオプションは常に保持します。')
+        with gr.Group(elem_classes="v12-option"):
+            gr.Markdown('### メモリ（RAM）の節約')
+            gr.Markdown('生成のたびに、不要なRAMとGPUキャッシュは自動で解放します。それでもRAMが足りないときは、下をONにしてください。')
+            controls['unload_after']=gr.Checkbox(settings['unload_after'],label='生成が終わるたびにモデルもメモリから解放する（次の生成は読み込みのぶん遅くなります）')
         with gr.Group(elem_classes="v12-option"):
             gr.Markdown('### 音声の自動保存先')
             controls['auto_export']=gr.Checkbox(settings['auto_export'],label='生成した音声を自動保存する')
